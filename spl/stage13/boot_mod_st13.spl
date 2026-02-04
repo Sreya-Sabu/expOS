@@ -29,6 +29,10 @@ loadi(70,12);
 loadi(16,29);
 loadi(17,30);
 
+//loading mod5 - scheduler
+loadi(50,63);
+loadi(51,64);
+
 
 
 //for init code
@@ -63,4 +67,5 @@ PTLR =10;
 [PTBR+19] = "0110";
 
 [76*512] = [65*512+1]; //for init
+
 return;

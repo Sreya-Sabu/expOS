@@ -1,3 +1,4 @@
+[PROCESS_TABLE+0] = 0;
 [PROCESS_TABLE+11] = 82;
 [PROCESS_TABLE+1] = 0;
 [PROCESS_TABLE+13] = 8*512;
@@ -5,27 +6,18 @@
 [PROCESS_TABLE+14] = PAGE_TABLE_BASE;
 [PROCESS_TABLE+15] = 10;
 [PROCESS_TABLE+4] = RUNNING;
-//update the process state
-//[SYSTEM_STATUS_TABLE+1] =0;
-
 
 
 
 [SYSTEM_STATUS_TABLE+1] =0;
 
-
-
-//loadi(4,17);
-//loadi(5,18);
-
-loadi(63,13);
-loadi(64,14);
-
-
-
 //loading mod7
 loadi(54,67);
 loadi(55,68);
+
+loadi(69, 11); //loadi idle
+loadi(70, 12); 
+
 
 SP = 82*512-1;
 call BOOT_MODULE;
@@ -62,8 +54,6 @@ PTBR=PAGE_TABLE_BASE;  //as PID of idle process is 0
 
 //setting the top of stack to entry point
 [81 * 512] = [69*512 + 1];
-
-
 
 
 SP = 8*512;
