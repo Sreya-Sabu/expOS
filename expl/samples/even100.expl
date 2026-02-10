@@ -4,8 +4,8 @@ int main(){
     enddecl
     begin
         num = 1;
-        while(num < 100) docd
-            if((num % 2) != 0) then
+        while(num <=100) do
+            if((num % 2) == 0) then
                 temp = exposcall("Write", -2, num);
             endif;
             num = num + 1;

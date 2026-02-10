@@ -1,0 +1,37 @@
+alias functionNum R1;
+alias currentPID R2;
+
+if(functionNum==8) then
+while([TERMINAL_STATUS_TABLE+0]==1) do
+    [PROCESS_TABLE+ 16*currentPID+4] = WAIT_TERMINAL;
+    multipush(R1,R2);
+    call MOD_5;
+    multipop(R1,R2);
+endwhile;
+
+[TERMINAL_STATUS_TABLE + 0] = 1;
+[TERMINAL_STATUS_TABLE + 1] = currentPID;
+return;
+
+else 
+    if (functionNum==9) then
+
+        if(currentPID!=[TERMINAL_STATUS_TABLE+1]) then
+            R0 = -1;
+            return;
+        endif;
+
+        [TERMINAL_STATUS_TABLE + 0] = 0;
+
+        alias counter R5;
+        counter = 1;
+        while(counter<16) do
+            if([PROCESS_TABLE+counter*16+4]==WAIT_TERMINAL) then
+                [PROCESS_TABLE + counter*16 + 4] = READY;
+            endif;
+            counter = counter + 1;
+        endwhile;
+        R0 = 0;
+    endif;
+endif;
+return;

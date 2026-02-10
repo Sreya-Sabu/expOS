@@ -16,6 +16,9 @@ process_table_entry = PROCESS_TABLE + currentPID * 16;
 alias newPID R4;
 newPID = (currentPID+1) % 16;
 
+
+//applying ROUNDROBIN to find the next process
+
 while(newPID!=currentPID) do
     if([PROCESS_TABLE+newPID*16 + 4]==READY||[PROCESS_TABLE+16*newPID+4]==CREATED) then
         

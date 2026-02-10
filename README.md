@@ -27,7 +27,7 @@ OS Startup Code (page 1 only)
 
 why cant we run init first - NO cuz Because the kernel needs IDLE’s context before INIT can cause interrupts, system calls, or blocking.
 
-###so  what if INIT runs first !!
+### so  what if INIT runs first !!
 Let’s walk through the exact failure case
 
 Assume:
@@ -102,3 +102,43 @@ let a P1 be running and it faced a timer interrupt - switches to kernel mode (st
 Why cant we directly ireturn from scheduler if P2 had some return address ?
 
 ireturn is only correct when the top of the stack contains a USER-MODE context. here the top of stack contains the return add to the interrupt which is in KERNEL-MODE so NO
+
+
+# STAGE 15
+
+A process req many process like disk,terminal,inode --> therefor we need a Resource Manager (MODULE 0) . A process has to acquire the req resource by invoking the RM . If the resource is not available then it has to be blocked while some other process runs
+
+
+TTS - contains STATUS AND PID (status indicted wheter terminal is available or not pid stores the pid of the process using the terminal )
+
+Acquire module = function number 8 and Release module = function number 9 this function num is passedd as argument (R1) along with PID (R2) 
+
+User Program
+    ↓
+write system call
+    ↓
+Terminal Write (Device Manager)
+    ↓
+Acquire Terminal (Resource Manager)
+    ↓
+Print word (R3)
+    ↓
+Release Terminal (Resource Manager)
+
+save the register before invoking modules
+
+### busy loop
+the acquire terminal loop constantly invoke the scheduler if the resource is not free. Cause many processes are waiting at the time and whne the resource is available the scheduler assigns some P to get the resource while “the rest may run later and incorrectly assume the resource is free if no re-check is performed” creates issue . therefore we have a busy loop which consntly check if resource availble if not call scheduler else lock the the resource
+w/o loop
+if (terminal not available)
+    wait once;
+acquire terminal;   // no re-check
+
+with loop
+while (terminal is busy) 
+    invoke scheduler;
+lock terminal;
+Without a busy wait, a process waits once and blindly proceeds; with a busy wait, a process repeatedly re-checks the resource condition and proceeds only when it is safe.
+
+## how did it work last time when we just used print in INT 7 
+## when we call multipush & multipop just becz we are in kernel mode and kernl stack it will automatically be using tht?
