@@ -1,0 +1,32 @@
+[PROCESS_TABLE + [SYSTEM_STATUS_TABLE+1]*16 + 13] = SP;
+SP = [PROCESS_TABLE + [SYSTEM_STATUS_TABLE+1]*16+11]*512-1;
+backup;
+
+alias reqPID R0;
+reqPID = [TERMINAL_STATUS_TABLE+1];
+breakpoint;
+[PROCESS_TABLE + [TERMINAL_STATUS_TABLE+1]*16 + 8] = P0;
+breakpoint;
+multipush(R0);
+
+
+
+
+        [TERMINAL_STATUS_TABLE + 0] = 0;
+
+        alias counter R5;
+        counter = 1;
+        while(counter<16) do
+            if([PROCESS_TABLE+counter*16+4]==WAIT_TERMINAL) then
+                [PROCESS_TABLE + counter*16 + 4] = READY;
+            endif;
+            counter = counter + 1;
+        endwhile;
+        R0 = 0;
+    
+multipop(R0);
+
+restore;
+
+SP = [PROCESS_TABLE + [SYSTEM_STATUS_TABLE+1]*16 + 13];
+ireturn;

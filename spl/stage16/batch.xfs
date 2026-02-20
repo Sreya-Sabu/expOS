@@ -1,0 +1,7 @@
+load --os $HOME/myexpos/spl/stage16/os_startup_st16.xsm
+load --int=6 $HOME/myexpos/spl/stage16/int6.xsm
+load --module 4 $HOME/myexpos/spl/stage16/mod4_st16.xsm
+load --int=console $HOME/myexpos/spl/stage16/console_interrupt.xsm
+load --module 7 $HOME/myexpos/spl/stage16/boot_mod_st16.xsm
+load --module 0 $HOME/myexpos/spl/stage15/mod0_st15.xsm
+load --int=10 $HOME/myexpos/spl/stage14/sample_timer.xsm
