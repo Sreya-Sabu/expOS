@@ -1,0 +1,27 @@
+decl
+    int n, arr[100], i, j, temp,a;
+enddecl
+int main() {
+begin
+   
+    a=1;
+    
+    temp = exposcall("Read" , -1, n);
+    i = 0;
+    while (i < n) do
+        temp = exposcall("Write",-2,a);
+        temp = exposcall("Read" , -1, arr[i]);
+        i = i + 1;
+    endwhile;
+
+
+
+    i = 0;
+    while (i < n) do
+        temp = exposcall("Write" , -2, arr[i]);
+        i = i + 1;
+    endwhile;
+
+    return 0;
+end
+}

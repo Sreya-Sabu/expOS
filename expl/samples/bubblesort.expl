@@ -1,0 +1,35 @@
+decl
+    int n, arr[100], i, j, temp;
+enddecl
+int main() {
+begin
+    temp = exposcall("Read" , -1, n);
+    i = 0;
+    while (i < n) do
+        temp = exposcall("Read" , -1, arr[i]);
+        i = i + 1;
+    endwhile;
+
+    i = 0;
+    while(i < (n-1)) do
+        j=i+1;
+        while (j < n) do
+            if (arr[i] > arr[j]) then   
+                temp = arr[i];
+                arr[i] = arr[j];
+                arr[j] = temp;
+            endif;
+            j = j + 1;
+        endwhile;
+        i = i + 1;
+    endwhile;
+
+    i = 0;
+    while (i < n) do
+        temp = exposcall("Write" , -2, arr[i]);
+        i = i + 1;
+    endwhile;
+
+    return 0;
+end
+}
