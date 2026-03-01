@@ -1,0 +1,50 @@
+alias functionNum R1;
+alias currentPID R2;
+
+if(functionNum==3) then //ACQUIRE DISK
+    while([DISK_STATUS_TABLE + 0]==1) do
+        [PROCESS_TABLE + currentPID*16 + 4] = WAIT_DISK;
+        multipush(R1,R2);
+        call MOD_5; // when scheduled again it will start from insrtuction after this and go back to the loop to check the availablility again thats why we need a loop
+        multipop(R1,R2);
+    endwhile;
+        [DISK_STATUS_TABLE + 0] = 1;
+        [DISK_STATUS_TABLE + 4] = currentPID;
+        return;
+endif;
+
+
+if(functionNum==8) then //ACQUIRE TERMINAL
+while([TERMINAL_STATUS_TABLE+0]==1) do
+    [PROCESS_TABLE+ 16*currentPID+4] = WAIT_TERMINAL;
+    multipush(R1,R2);
+    call MOD_5;
+    multipop(R1,R2);
+endwhile;
+
+[TERMINAL_STATUS_TABLE + 0] = 1;
+[TERMINAL_STATUS_TABLE + 1] = currentPID;
+return;
+
+else 
+    if (functionNum==9) then //RELEASE TERMINAL
+
+        if(currentPID!=[TERMINAL_STATUS_TABLE+1]) then
+            R0 = -1;
+            return;
+        endif;
+
+        [TERMINAL_STATUS_TABLE + 0] = 0;
+
+        alias counter R5;
+        counter = 1;
+        while(counter<16) do
+            if([PROCESS_TABLE+counter*16+4]==WAIT_TERMINAL) then
+                [PROCESS_TABLE + counter*16 + 4] = READY;
+            endif;
+            counter = counter + 1;
+        endwhile;
+        R0 = 0;
+    endif;
+endif;
+return;

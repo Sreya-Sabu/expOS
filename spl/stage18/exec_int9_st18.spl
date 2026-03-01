@@ -1,0 +1,226 @@
+alias userSP R0;
+alias logPagNum R1;
+alias offset R2; 
+alias fileName R4;
+alias filenameadd R3;
+alias index R5;
+
+[PROCESS_TABLE + [SYSTEM_STATUS_TABLE+1] * 16 + 9] = 9; //setting up the mode FLAG
+
+userSP = SP; //saving the user sp
+
+[PROCESS_TABLE + [SYSTEM_STATUS_TABLE+1] * 16 + 13] = SP;
+SP = [PROCESS_TABLE + [SYSTEM_STATUS_TABLE+1] * 16 + 11]*512 - 1; // switching to kernel stack
+
+
+logPagNum = [PTBR + 2 * ((userSP-4)/512)];
+offset = (userSP-4)%512;
+
+filenameadd = logPagNum*512 + offset;   // virtual address
+
+fileName = [filenameadd];
+
+
+
+//-------------------searching the inode table for req exec file----------------------//
+index = 1; //not checking first entry in inode table as its reservd for ROOT file
+
+while(index<60) do
+    if(([INODE_TABLE + 16*index + 1]==fileName) && ([INODE_TABLE + 16*index + 0] == EXEC)) then
+        break;
+    endif;
+index = index + 1;
+endwhile;
+
+//-------------------------------------------------------------------------------------//
+
+//if not file exit return -1
+
+if(index == 60) then
+    [[PTBR + 2 * ((userSP-1)/512)]* 512 + ((userSP-1) % 512)] = -1;
+    [PROCESS_TABLE + [SYSTEM_STATUS_TABLE+1] * 16 + 9] = 0;
+    SP = userSP;
+    ireturn;
+endif;
+
+//---------------------------calling EXIT_PROCESS from process manager mod ------------//
+
+multipush(R0,R1,R2,R3,R4,R5);
+
+R2 = [SYSTEM_STATUS_TABLE + 1]; // R2 always contains the PID
+R1 = 3;                         // R1 contains the func num
+
+call MOD_1;
+
+multipop(R0,R1,R2,R3,R4,R5);
+
+//-------------------------------------------------------------------------------------//
+
+alias userareapage R6;
+userareapage = [PROCESS_TABLE + [SYSTEM_STATUS_TABLE+1] * 16 + 11]; // gonna use the same UAP 
+[MEMORY_FREE_LIST + userareapage] = [MEMORY_FREE_LIST + userareapage] + 1; // cause this page is again used again by new process
+[SYSTEM_STATUS_TABLE + 2] = [SYSTEM_STATUS_TABLE + 2] - 1; // decrementing MEM_FREE_COUNT in SST;
+SP = userareapage * 512 - 1; 
+
+[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1]*16 + 4 ] = RUNNING;
+[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1]*16 + 7]  = index;
+
+//-------------------------------------------------------------------------------------//
+
+// setting up the PER PROCESS RESOURCE table
+alias i R8;
+i = 1;
+while(i<9) do 
+    [([PROCESS_TABLE + [SYSTEM_STATUS_TABLE+1]*16 + 11] + 1)* 512 - 2 * i] = -1;
+    i = i+1;
+endwhile;
+
+//---------------------------------------
+
+//------ALLOCATE NEW PAGES------
+//setting up lib pages
+PTBR = PAGE_TABLE_BASE + [SYSTEM_STATUS_TABLE+1] * 20;
+[PTBR + 0] = 63;
+[PTBR + 1] = "0100";
+[PTBR + 2] = 64;
+[PTBR + 3] = "0100";
+
+multipush(R0,R1,R2,R3,R4,R5,R6);
+//---------ALLOCATE stack 1-----------//
+
+
+R1 = 1; // or u can wrte R1 = GET_FREE_PAGE  to get the fun num;
+call MOD_2; // calling manager_mod
+
+[PTBR + 16] = R0;
+[PTBR + 17] = "0110";
+
+
+//---------ALLOCATE stack 2-----------//
+
+
+R1 = 1;
+call MOD_2;
+
+[PTBR + 18] = R0;
+[PTBR + 19] = "0110";
+
+
+//---------ALLOCATE heap 1-----------//
+
+
+R1 = 1;
+call MOD_2;
+
+[PTBR + 4] = R0;
+[PTBR + 5] = "0110";
+
+
+//---------ALLOCATE heap 2-----------//
+
+R1 = 1;
+call MOD_2;
+
+[PTBR + 6] = R0;
+[PTBR + 7] = "0110";
+
+multipop(R0,R1,R2,R3,R4,R5,R6);
+
+
+//---------ALLOCATE code pages--------//
+[PTBR + 8] = -1;
+[PTBR + 9] = "0000";
+[PTBR + 10] = -1;
+[PTBR + 11] = "0000";
+[PTBR + 12] = -1;
+[PTBR + 13] = "0000";
+[PTBR + 14] = -1;
+[PTBR + 15] = "0000";
+
+//checking the inode table block entries and if present we call GET_FREE_PAGE;
+
+multipush(R0,R1,R2,R3,R4,R5,R6);
+if([INODE_TABLE + index*16 + 8] != -1) then
+    
+    R1 = 1;
+    call MOD_2;
+
+    [PTBR + 8] = R0;
+    [PTBR + 9] = "0100";
+
+    R1 = 2;
+    R2 = [SYSTEM_STATUS_TABLE + 1];
+    R3 = [PTBR + 8];
+    R4 = [INODE_TABLE + index * 16 + 8];
+    call MOD_4;
+
+    //loadi([PTBR+8],[INODE_TABLE + index*16 + 8]);
+endif;
+
+if([INODE_TABLE + index*16 + 9] != -1) then
+  
+    R1 = 1;
+    call MOD_2;
+
+    [PTBR + 10] = R0;
+    [PTBR + 11] = "0100";
+
+    R1 = 2;
+    R2 = [SYSTEM_STATUS_TABLE + 1];
+    R3 = [PTBR + 10];
+    R4 = [INODE_TABLE + index * 16 + 9];
+    call MOD_4;
+
+
+   //loadi([PTBR+10],[INODE_TABLE + index*16 + 9]);
+endif;
+
+if([INODE_TABLE + index*16 + 10] != -1) then
+   
+    R1 = 1;
+    call MOD_2;
+
+    [PTBR + 12] = R0;
+    [PTBR + 13] = "0100";
+
+    R1 = 2;
+    R2 = [SYSTEM_STATUS_TABLE + 1];
+    R3 = [PTBR + 12];
+    R4 = [INODE_TABLE + index * 16 + 10];
+    call MOD_4;
+
+
+    //loadi([PTBR+12],[INODE_TABLE + index*16 + 10]);
+endif;
+
+if([INODE_TABLE + index*16 + 11] != -1) then
+   
+    R1 = 1;
+    call MOD_2;
+
+    [PTBR + 14] = R0;
+    [PTBR + 15] = "0100";
+
+    R1 = 2;
+    R2 = [SYSTEM_STATUS_TABLE + 1];
+    R3 = [PTBR + 14];
+    R4 = [INODE_TABLE + index * 16 + 11];
+    call MOD_4;
+
+    
+    //loadi([PTBR+14],[INODE_TABLE + index*16 + 11]);
+endif;
+
+multipop(R0,R1,R2,R3,R4,R5,R6);
+
+
+
+
+
+//-------------------DONE allocating all pages and setup PT---------------------//
+
+[[PTBR + 16]*512] = [[PTBR + 8]*512+1];
+SP = 8 * 512;
+
+[PROCESS_TABLE + [SYSTEM_STATUS_TABLE+1]*16 + 9] = 0;
+ireturn;
