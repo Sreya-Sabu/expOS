@@ -142,3 +142,89 @@ Without a busy wait, a process waits once and blindly proceeds; with a busy wait
 
 ## how did it work last time when we just used print in INT 7 
 ## when we call multipush & multipop just becz we are in kernel mode and kernl stack it will automatically be using tht?
+
+
+
+# stage 16
+
+memory mapped io - Same address space is shared by RAM + I/O devices.
+io mapped io (port mapped io) - I/O devices use a separate address space different from memory.
+
+The driver for each device is assumed to be pre-loaded into the disk. modern system allows add/remove device drivers while the OS is running, without restarting the computer.
+
+- when an interrupt occurs and sp + 1 is outside the page table 
+First attempt failed due to bad stack → OS fixes the issue → CPU retries interrupt entry → ensures reliable interrupt handling.
+
+### Exception handling
+1. Illegal Memory Access - addrs generated is outside the logical address space ( also when write bit is not set in pagetable)
+2. illegal instruction - like mov ip 2
+3. Arithmetic exception - div / % by 0
+4. page fault - logical address is within the range but valid bit is 0
+
+Demand paging or lazy memory allocation 
+Demand paging is a memory management technique in which pages are loaded into main memory only when they are actually required (on demand) rather than loading the entire program in advance.
+
+EIP = logical IP that caused the exception
+EPN = the page num thaht causd the page fault
+EC = pageflt(0) , illegal instr(1) , illegal mem acc(2), arthmintc (3)
+EMA = the illegal memory access addr
+
+### IN
+reading a word from console - machine proceed with the next instruction w/o wiating for console to cmplt reading . once finished stores word to port P0 and get a console o/p
+
+Why READ is Privileged
+Direct access to hardware (I/O devices)
+READ may interact with disk, keyboard, console, etc.
+Hardware must be controlled by OS.
+If user programs access devices directly → conflicts, corruption.
+
+1. Fd - a samll integer used by os to track which file ur prgm is reading/writing (many procces will be accessing the same file st the same time and fd identifies one open instance of a file in a process )
+2. fp - from which position in the file the next read should happen
+3. buffer - data is copied to buffer
+
+### console vs terminal vs shell
+The console is the basic input/output interface, the terminal is a software interface that provides access to the console, and the shell is a command interpreter program that runs inside the terminal to execute user commands.
+
+IN instruction called -> current inst -> waiting and scheduler
+
+
+# STAGE 17
+A succesfull exec program kills the progrm that invoked it (not killing i mean a new code content will be pasted and thus the orginal code's code is lost and note that they have the same pid)
+
+Process A: old program
+  VPage 0 → PFrame 101 (code)
+  VPage 1 → PFrame 102 (heap)
+  VPage 2 → PFrame 103 (stack)
+
+exec("new_program") is called
+  ↓
+Old pages freed
+  ↓
+Page table invalidated:
+  VPage 0 → invalid
+  VPage 1 → invalid
+  VPage 2 → invalid
+New program
+  VPage 0 → PFrame 201 (new code)
+  VPage 1 → PFrame 202 (new heap)
+  VPage 2 → PFrame 203 (new stack)
+
+Exec calls EXIT PROCESS from PROCESS_MANAGER(MOD_1) for deallocation
+Exit process relearse the user are page - exec system call - kernel mode - therefore after exit process uses the new process's user area page - then allocate heap stack and data( depend on the num of block in the inode table loaded using LOADI) - getting new page using GET FREE PAGE from MEMORY MANAGER MOD
+
+- Memory free list in page 57 of memory gives info about the number of processes each page shared
+
+- exit process (fn no = 3)
+dealloactes all pages - then dealloctes all pages in the page table ( free page table ) - free user area page - state = terminated;
+- free page table (fn no = 2)
+every valid entry in page table is made free by involing (RELEASE PAGE in mem mod) except the lib pages since its shared by all processes
+- free user area page (fn no = 4)
+usig release page - The mapping is removed, but the physical content is still sitting in RAM (for now). so return address and all is still there - this happens becuse release page is non blcoking meaning there is no context switch or the released page is not immediately used
+- release page (fun num = 3 for mem manager mod)
+decrements the number in the corrs page in mem free list, in the sst hold the num of available mem free - if any one wait for mem that process must be made ready on the availability of free mem pages
+- get free page 
+go thru the memory list to find a free page and if found increment the count
+if no mem page availabe the process has to be made to WAITING STAGE scheduler called and when mem page available it should be made to READY
+
+
+
