@@ -228,3 +228,224 @@ if no mem page availabe the process has to be made to WAITING STAGE scheduler ca
 
 
 
+# STAGE 18
+| Feature          | LOADI                | LOAD                |
+| ---------------- | -------------------- | ------------------- |
+| Waiting          | Yes                  | No                  |
+| Type             | Blocking I/O         | Non-blocking I/O    |
+| CPU Usage        | Idle during transfer | CPU does other work |
+| Interrupt needed | No                   | Yes                 |
+| Parallelism      | ❌                    | ✅                   |
+
+The Device Manager module acts as the device driver.
+LOAD and LOADI are hardware-level helper instructions that simulate what the device driver normally does
+loadi = pollinh
+load  = interrupt driven
+
+Why must the process wait even though LOAD does not wait?
+Because the process needs the data being loaded from disk.
+Until the transfer finishes, the required data is not yet in memory, so the process cannot continue correctly.
+Start disk transfer
+↓
+Process state → WAIT_DISK
+↓
+Call Scheduler
+↓
+Run another process
+
+# stage 19
+what happens when an exception like page fault or % by 0 happens ?
+the machine must not halt, for otherwise, one application will be able to halt the whole system. The correct action must be to transfer control to some privileged mode handler. This privileged mode handler is the exception handler 
+
+
+for cases like illegal memory access, illegal instruction and arthmetic exception - the os cant do anything and hence it will terminate the prcess gracefully and scheduler schedules another process
+
+PAGE FAULT
+The page fault exception (EC=0) occurs when the last instruction in the currently running application tried to either -
+a) Access/modify data from a legal address within its address space, but the page was set to invalid in the page table or
+b) fetch an instruction from a legal address within its address space, whose page table entry is invalid.
+
+Get Code Page is required because code pages are shared among processes; unlike Get Free Page, it checks whether a code block is already loaded in memory and reuses it, enabling demand paging and efficient memory utilization.
+
+Code Page Fault
+Need instructions
+→ Load from executable
+→ Maybe share
+→ Get Code Page()
+
+Heap Page Fault
+Need empty memory
+→ Allocate blank page
+→ Get Free Page()
+
+We cannot use Get Code Page for heap pages because heap pages are private, while code pages are shared.
+
+Local variables like int x = 7 are allocated in the stack, while dynamically allocated variables using malloc() are stored in the heap.
+malloc()
+   ↓
+OS gives free heap space
+   ↓
+Pointer returned
+
+Allocating a page means the OS assigns a free physical memory frame (in RAM) to that virtual page.
+
+
+
+# STAGE 20
+FORK SYSTEM CALL - a new PID and a new address space - a new page table and process table
+note that child and parent share teh code and the heap - gven new stack pages and UAP 
+### what all differ ?
+TICK , PID , PPID , UAP, KPTR , INPUT BUFFER , MODE FLAG ,PTLR , PTBR
+here the contents of user stack are copied into the user stack of child ( also the per process resource table) but not the kernel stack 
+
+Both the parent and the child start execution from the instruction immediately after the fork system call.
+
+if the parent had allocated memory using the Alloc() function and attached it to a variable of some user defined type before fork, the copies of the variables in both the parent and the child store the address of the same shared memory.
+
+In ExpL programs, if you have a variable of a user-defined type and assign it memory via Alloc(), that memory comes from the heap.
+
+eXpOS heap is shared, so:
+
+If the parent deallocates (free) that memory, it is no longer valid for the child.
+
+Similarly, if the child deallocates it first, it affects the parent.
+
+Synchronisation will be required for heap only and not lib & code are they are read only 
+to satisfy the heap sharing semantics, the OS needs to ensure during Fork that the parent is allocated its heap pages and these pages are shared with the child. 
+
+## Flowchart for fork() System Call in eXpOS
+1. START
+  │
+  │ User program calls exposcall(Fork)
+  │
+  ▼
+INT 8 triggered → Control enters Fork interrupt handler
+  │
+  ▼
+Set MODE FLAG = 8 (system call number)
+Switch from user stack → kernel stack
+  │
+  ▼
+Call GetPcbEntry() to allocate PCB for child
+  │
+  ▼
+Is free PCB available?
+ ┌───────────────┬─────────────────┐
+ │ YES           │ NO              │
+ ▼               ▼
+PID obtained     Store -1 as return value
+                 Reset MODE FLAG
+                 Switch to user stack
+                 Return to user mode
+                 END
+                
+2. Heap allocation step
+Check if heap pages exist for parent
+        │
+        ▼
+Heap allocated?
+ ┌───────────────┬─────────────────┐
+ │ YES           │ NO              │
+ ▼               ▼
+Continue         Allocate heap pages
+                 using GetFreePage()
+                 Update parent page table
+
+3. Allocating stack 
+Allocate memory pages for child:
+    │
+    ├── Stack Page 1  → GetFreePage()
+    ├── Stack Page 2  → GetFreePage()
+    └── User Area Page → GetFreePage()
+
+4. Initialize Child Process Table
+
+Copy fields from parent PCB to child PCB:
+USERID
+SWAP FLAG
+USER AREA SWAP STATUS
+INODE INDEX
+UPTR
+
+MODE FLAG = 0
+KPTR = 0
+TICK = 0
+PPID = Parent PID
+STATE = CREATED
+USER AREA PAGE NUMBER = allocated page (PID,PTBR,PTLR set by GetPcbEntry)
+
+5. Copy Parent's Per-Process Resource Table
+    │
+    ├── Open files
+    └── Semaphores
+
+6. Copy parent's disk map table → child
+      │
+      ├── Code pages
+      ├── Heap pages
+      │
+      └── Stack/User area entries
+             set to INVALID
+
+7. Copy page table entries for:
+Code pages
+Heap pages
+Library pages 
+Increment SHARE COUNT in memory free list
+
+8. Initailizing Stack
+Set stack entries in child page table to newly allocated stack pages and copy parent user stack to child
+
+9. Kernel Stack Setup
+Push BP register value
+onto child's kernel stack
+
+10. Parent user stack return value = Child PID
+Child user stack return value = 0
+
+11. Reset MODE FLAG of parent = 0
+Switch to parent user stack
+Return to user mode
+
+
+### issue i faced
+we modified the int10 like we call the exit process and schedule some another process but what if there are no other proces in ready and we just keep on looping over idle . in the earlier INT10 we used to check if there is some process waiting to be in RUNNING and we call MOD_5 else we halt , in the new exit process i didnt do that so it never halts so we add up a condition to check if there is some process or not then we call the mod_5 else halt
+
+
+
+## note this
+where exactly is IN in read (not in xsm ok)
+The same reason Write doesn't directly use OUT — it goes through the library and system call chain:
+read(a)  in ExpL
+    → exposcall("Read", -1, &a)  
+        → library translates to INT 6
+            → INT 6 handler runs in kernel
+                → uses IN instruction (privileged)
+                    → result stored back in user stack
+IN is a privileged instruction — it can only be executed in kernel mode. User programs run in unprivileged mode, so they cannot directly use IN. That's why the read has to go through a system call.
+If you look at the compiled code you can see the pattern:
+MOV R0,"Read"
+PUSH R0          ← function name
+MOV R0,-1
+PUSH R0          ← file descriptor (-1 = console input)
+PUSH R1          ← address of variable to store result
+ADD SP,2
+CALL 0           ← calls library at logical address 0
+The CALL 0 is calling the library (which is mapped to logical pages 0-1). The library then invokes INT 6, and inside INT 6 the kernel executes IN to actually read from the terminal.
+Same logic applies to OUT for Write — user programs can't use it directly, so Write goes through INT 7 which uses print/OUT inside the kernel.
+
+## when is INT10 called
+So the structure is:
+
+Set up SP and BP
+Call main() — execution jumps to address 2066 (where your actual while loop starts)
+When main() finishes and does RET, it comes back here
+Then INT 10 executes
+
+The INT 10 is not executing at the top — the CALL 2066 jumps over it to main(). INT 10 only runs when main() returns via RET.
+
+# STAGE 21
+So the rule is:
+
+Exit → process is truly done → wake up waiters
+Exec → process continues with new program → don't wake up waiters
