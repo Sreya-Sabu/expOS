@@ -1,0 +1,146 @@
+alias functionNumber R1;
+
+// GET FREE PAGE
+if (functionNumber == 1) then
+    // increment WAIT_MEM_COUNT
+    [SYSTEM_STATUS_TABLE + 3] = [SYSTEM_STATUS_TABLE + 3] + 1;
+
+    // busy loop -> set state to WAIT_MEM and call SCHEDULER
+    while ([SYSTEM_STATUS_TABLE + 2] == 0) do
+        [PROCESS_TABLE + ([SYSTEM_STATUS_TABLE+1]*16) + 4] = WAIT_MEM;
+        call SCHEDULER;
+    endwhile;
+    
+    // decrement WAIT_MEM_COUNT field and MEM_FREE_COUNT
+    [SYSTEM_STATUS_TABLE + 3] = [SYSTEM_STATUS_TABLE + 3] - 1;
+    [SYSTEM_STATUS_TABLE + 2] = [SYSTEM_STATUS_TABLE + 2] - 1;
+
+    alias counter R2;
+    counter = 0;
+    
+    // findin the first free mem page and set the memory free list to 1
+    while (counter < NUM_MEM_PAGES && [MEMORY_FREE_LIST + counter] != 0) do
+        counter = counter+1;
+    endwhile;
+
+    [MEMORY_FREE_LIST + counter] = 1;
+    // breakpoint;
+    R0 = counter;
+endif;
+
+// --- Release Page (Function 2) ---
+// Purpose: Decrement reference count and potentially free memory page
+// Input: pageNum (R2) - Physical page to release
+// Implementation:
+//   - Decrements Memory Free List entry (shared refcount)
+//   - Increments MEM_FREE_COUNT(2) when page becomes unused
+//   - Wakes processes in WAIT_MEM state
+//   - Called during process termination/page table free 
+if (functionNumber == 2) then
+    alias pageNum R2;
+
+    // decrease memery free list
+    [MEMORY_FREE_LIST + pageNum] = [MEMORY_FREE_LIST + pageNum] - 1;
+    
+    // if memory free list is 0, increase MEMORY_FREE_LIST
+    if ([MEMORY_FREE_LIST + pageNum] == 0) then 
+        [SYSTEM_STATUS_TABLE + 2] = [SYSTEM_STATUS_TABLE + 2] + 1;
+    endif;
+
+    alias counter R3; 
+    counter = 1;
+
+    // set all WAIT_MEM pages to READY
+    while (counter < MAX_PROC_NUM) do
+        if ([PROCESS_TABLE + counter*16 + 4] == WAIT_MEM) then
+            [PROCESS_TABLE + counter*16 + 4] = READY;
+        endif;
+        counter = counter + 1;
+    endwhile;
+    // breakpoint;
+endif;
+
+// --- Release Block (Function 4) ---
+// Purpose: Decrements the entry corresponding to the disk block in the disk free list
+// Input: blockNumber (R2) - Disk block to release
+if (functionNumber == 4) then
+    alias blockNumber R2;
+    [DISK_FREE_LIST + blockNumber] = [DISK_FREE_LIST + blockNumber] - 1;
+endif;
+
+// --- Get Code Page (Function 5) ---
+// Purpose: Load code pages from disk to memory, handling shared pages
+// Input: blockNumber (R2) - Disk block to load
+//        currentPID (R3) - Current process ID
+// Output: R0 - Memory page number containing code
+if (functionNumber == 5) then
+    // breakpoint;
+
+    alias blockNumber R2;
+    alias currentPID R3;
+    alias counter R4;
+    alias process R5;
+    alias flag R6;
+    alias targetPage R7;
+
+    process = 1;
+    flag = 0;
+
+    // search all processes' disk map entries
+    while (process < MAX_PROC_NUM) do
+        counter = 4; // start at 4th disk map entry (code pages)
+
+        // check current process's code page entries (entries 4-7)
+        while (counter < 8) do
+            // check if block matches disk map entry AND page table entry is valid
+            if ([DISK_MAP_TABLE + process*10 + counter] == blockNumber && [[PROCESS_TABLE + process*16 + 14] + 8 + (counter - 4)*2] != -1) then
+                flag = 1; //valid entry found
+                break;
+            endif;
+            counter = counter + 1;
+        endwhile;
+        if(flag == 1) then
+            break;
+        endif;
+        process = process + 1;
+    endwhile;
+
+    // calculate target page table entry address
+    targetPage = [PROCESS_TABLE + process*16 + 14] + 8 + (counter - 4)*2;
+
+    // if found valid shared code page 
+    if (flag == 1 && ([targetPage + 1] == "0100" || [targetPage + 1] == "0110" || [targetPage + 1] == "1110")) then 
+        alias memoryPage R6;
+        memoryPage = [targetPage];  // get existing memory page
+
+        // increment free list count (shared page reference)
+        [MEMORY_FREE_LIST + memoryPage] = [MEMORY_FREE_LIST + memoryPage] + 1;
+
+        R0 = memoryPage; // return existing page
+    
+    // code page not in memory
+    else
+        alias memoryPage R6;
+        // get new free page
+        multipush(R0, R1, R2, R3, R4, R5);
+        functionNumber = 1;
+        call MEMORY_MANAGER;
+        memoryPage = R0;
+        multipop(R0, R1, R2, R3, R4, R5);
+
+        // load disk block to memory page
+        multipush(R0, R1, R2, R3, R4, R5, R6);
+        functionNumber = 2;
+        R4 = blockNumber;
+        R2 = currentPID;
+        R3 = memoryPage;
+        call DEVICE_MANAGER;
+        multipop(R0, R1, R2, R3, R4, R5, R6);
+
+        R0 = memoryPage;
+    endif;
+endif;
+
+
+
+return;
