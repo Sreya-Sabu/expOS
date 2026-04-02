@@ -1,0 +1,103 @@
+alias userSP R5;
+userSP = SP;
+alias processTable R6;
+alias resourceTable R7;
+processTable = PROCESS_TABLE + ([SYSTEM_STATUS_TABLE + 1] * 16);
+resourceTable = [processTable + 11] * 512 + RESOURCE_TABLE_OFFSET;  // RESOURCE_TABLE_OFFSET (just 496)
+
+[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1] * 16 + 13] = SP;
+SP = [PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1] * 16 + 11] * 512 -1 ;
+
+alias syscallNum R1;
+syscallNum = [[PTBR + 2 * ((userSP - 5) / 512)] * 512 + ((userSP - 5) % 512)];
+
+[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1] * 16 + 9 ] = syscallNum;
+
+
+// SEMGET systemcall ----------------------------------------
+// purpose : to obtain the binary semaphore for a process
+// input   : none
+// output  :
+// - Return a semaphore descriptor (SEMID) on success
+// - Returns -1 if process has recahed its resource limit
+// - Returns -2 if maxmimum number of semaphores is recahed
+//Implementation
+// - setiing MODE_FLAG to 17 and switch kernel stack
+// - Find a free entry in the Per Process Reesource Table (Semaphore descriptor)
+// - if no entry in PPRT return -1
+// - Mark the resource identifier as 1( 1 to indicate semaphore)
+// - call acquire semaphore() from MOD_0 to obtain semaphore from semaphore table 
+// - if no semaphore available return -2
+// - store the semaphore index in PPRT
+// - restore the usersp and set back the MODE_FLAG
+// - return the Semaphore descriptor
+
+if(syscallNum == 17 ) then // SEMGET
+
+    alias i R2;
+    i = 0;
+    while(i < 8 && [resourceTable + i * 2] != -1) do  // iterating through the PPRT
+        i = i+1;
+    endwhile;
+
+    if(i == 8) then // no space in PPRT
+        print "SEMGETERR";
+        [[PTBR + 2 * ((userSP - 1) / 512)] * 512 + (userSP - 1) % 512] = -1;
+    else
+        multipush(R1,R2,R5);
+        R1 = 6;
+        R2 = [SYSTEM_STATUS_TABLE + 1];
+        call RESOURCE_MANAGER;
+        multipop(R1,R2,R5);
+
+        if(R0 == -1) then // no semaphores left
+        print "SEMGETERR";
+        [[PTBR + 2 * ((userSP - 1) / 512)] * 512 + (userSP - 1) % 512] = -2;    
+        else
+        [resourceTable + i * 2] = 1; //semaphore identifier
+        [resourceTable + i * 2 + 1] = R0; // semaphore id;
+        [[PTBR + 2 * ((userSP - 1) / 512)] * 512 + (userSP - 1) % 512] = i; //return semaphore id
+        endif;
+    endif;
+endif;
+
+// SEMRELEASE----systemcall----------------------------------------
+
+// Purpose: to release a semaphore descriptor held by a process
+// input : Semaphore descriptor (int)
+// output:
+// - returns 0 on success
+// - returns -1 if the semid id invalid
+// Implementation
+// - set MODE_FLAG to 18 and kernel stack
+// - validate the sem decsp in PPRT
+// - if invalid return -1
+// - call release semaphore from MOD_1 
+// - invalidate PPRT
+// - retsore the usersp and set back the MODE_FLAG
+// - return 0
+
+if(syscallNum == 18) then 
+    alias semaphoreId R2;
+    semaphoreId = [[PTBR + 2 * ((userSP - 4)/ 512)] * 512 + (userSP - 4) % 512];
+    if(semaphoreId < 0 || semaphoreId > 7 || [resourceTable + 2 * semaphoreId ] != 1) then
+        //print "SEMRELERR";
+        [[PTBR + 2 * ((userSP - 1) / 512)] * 512 + (userSP - 1) % 512] = -1;
+    else
+        multipush(R1,R2,R5);
+        R1 = 7;
+        R2 = [resourceTable + 2 * semaphoreId + 1];
+        R3 = [SYSTEM_STATUS_TABLE + 1];
+        call RESOURCE_MANAGER;
+        multipop(R1,R2,R5);
+
+        [resourceTable + 2 * semaphoreId] = -1;
+        [resourceTable + 2 * semaphoreId + 1] = -1;
+
+        [[PTBR + 2 * ((userSP - 1) / 512)] * 512 + (userSP - 1) % 512] = 0;
+    endif;
+endif;
+
+[processTable + 9] = 0;
+SP = [processTable + 13];
+ireturn;
