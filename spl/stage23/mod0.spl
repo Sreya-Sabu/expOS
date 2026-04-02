@@ -1,0 +1,181 @@
+alias functionNum R1;
+alias currentPID R2;
+
+if(functionNum==3) then //ACQUIRE DISK
+    while([DISK_STATUS_TABLE + 0]==1) do
+        [PROCESS_TABLE + currentPID*16 + 4] = WAIT_DISK;
+        multipush(R1,R2);
+        call MOD_5; // when scheduled again it will start from insrtuction after this and go back to the loop to check the availablility again thats why we need a loop
+        multipop(R1,R2);
+    endwhile;
+        [DISK_STATUS_TABLE + 0] = 1;
+        [DISK_STATUS_TABLE + 4] = currentPID;
+        return;
+endif;
+
+// --- Acquire Inode (Function 4)---
+// Purpose: Locks the inode entry for the given index  
+// Input: Inode Index (Integer), Process ID (PID) (Integer)  
+// Output:  
+//   - Returns 0 on success  
+//   - Returns -1 if inode becomes invalid (deleted before lock)  
+// Implementation:  
+//   - If inode is locked:  
+//     - Set process state to (WAIT_FILE, Inode Index)  
+//     - Call switch_context()  
+//   - If inode is invalid, return -1  
+//   - Lock inode by setting Lock field to current PID  
+//   - Return 0  
+//   - Used by Delete, Read, Write, Seek  
+
+if(functionNum == 4)  then   // acquire inode
+    alias inodeNumber R2;
+    alias currentPID R3;
+
+    while ([FILE_STATUS_TABLE + inodeNumber * 4 + 0] != -1) do
+        [PROCESS_TABLE + currentPID * 16 + 4] = WAIT_FILE;
+        [PROCESS_TABLE + currentPID * 16 + 5] = inodeNumber;
+        multipush(R1, R2, R3);
+        call SCHEDULER;
+        multipop(R1, R2, R3);
+    endwhile;
+
+    // file delete check
+    if ([INODE_TABLE + inodeNumber * 16 + 1] == -1) then
+        R0 = -1;
+    else 
+        [FILE_STATUS_TABLE + inodeNumber * 4 + 0] = currentPID;
+        R0 = 0;
+    endif;
+    return;
+endif;
+
+// --- Release Inode (Function 5)---  
+// Purpose: Unlocks the inode entry for the given index  
+// Input: Inode Index (Integer), Process ID (PID) (Integer)  
+// Output:  
+//   - Returns 0 on success  
+//   - Returns -1 if PID doesn’t match locking PID  
+// Implementation:  
+//   - If PID differs from locking PID, return -1  
+//   - Free lock by setting Lock field to -1  
+//   - Update processes in (WAIT_FILE, Inode Index) to READY  
+//   - Return 0  
+//   - Used by Read, Write, Seek  
+
+if (functionNum == 5) then // release inode
+    alias inodeNumber R2;
+    alias currentPID R3;
+
+    if ([FILE_STATUS_TABLE + inodeNumber * 4 + 0] == currentPID) then
+        [FILE_STATUS_TABLE + inodeNumber * 4 + 0] = -1;
+        alias i R4;
+        i = 0;
+        while (i < MAX_PROC_NUM) do
+            if ([PROCESS_TABLE + i * 16 + 4] == WAIT_FILE && [PROCESS_TABLE + i * 16 + 5] == inodeNumber) then
+                [PROCESS_TABLE + i * 16 + 4] = READY;
+            endif;
+            i = i + 1;
+        endwhile;
+        R0 = 0;
+    else
+        R0 = -1;
+    endif;
+    return;
+endif;
+
+
+
+
+// -- Acquires Semaphore------------
+// purpose: acquires a semaphore and return its index
+// input : PID - pid requesting the semaphore
+// output: semaphore table index on success and -1 on failure
+// Implementation
+// - find a free entry in Semaphore Table ( whose PROCESS COUNT = 0)
+// - if no free entry return -1;
+// - set PROCESS COUNT to 0 and LOCKING_PID to -1
+// - return semaphore table index
+
+
+if(functionNum == 6) then // ACQUIRE SEMAPHORE
+    alias i R3;
+    i = 0;
+    while(i < MAX_SEM_COUNT && [SEMAPHORE_TABLE + i * 4 + 1] != 0 ) do
+        i = i + 1;
+    endwhile;
+
+    if(i == MAX_SEM_COUNT) then
+        R0 = -1;
+    else
+        // set locking field to -1 and increment process count field to 1 
+        [SEMAPHORE_TABLE + i*4 + 0] = -1;
+        [SEMAPHORE_TABLE + i*4 + 1] = 1;
+        R0 = i;
+    endif;
+endif;
+
+// Release Semaphore---------------
+//Purpose: to release a semaphore, unlocking blocked processes
+//input  : Semaphore Table index, PID
+//output : 0 (success) or -1(failure)
+//Implementation
+// - if the semaphore is locked by the gvn PID set lockinng pid to -1;
+// - wake up processes in (WAIT_SEMAPHORE , SEMTABLEINDEX) state
+// - decrement PROCESS COUNT if 0 semaphore is free
+// - called by semrelease and exit system calls
+
+if(functionNum == 7) then // RELEASE SEMAPHORE
+    alias semindex R2;
+    alias currentPID R3;
+    alias i R4;
+    i = 0;
+    if([SEMAPHORE_TABLE + 4 * semindex + 0] == currentPID) then
+        [SEMAPHORE_TABLE + 4 * semindex + 0] = -1;
+
+    while(i < MAX_PROC_NUM) do
+        if([PROCESS_TABLE + i * 16 + 4] == WAIT_SEMAPHORE && [PROCESS_TABLE + i * 16 + 5] == semindex) then 
+            [PROCESS_TABLE + i * 16 + 4] = READY;
+        endif;
+    i = i + 1;
+    endwhile;
+
+    [SEMAPHORE_TABLE + semindex * 4 + 1] = [SEMAPHORE_TABLE + semindex * 4 + 1] -1 ;
+    endif;
+endif;
+
+
+if(functionNum==8) then //ACQUIRE TERMINAL
+while([TERMINAL_STATUS_TABLE+0]==1) do
+    [PROCESS_TABLE+ 16*currentPID+4] = WAIT_TERMINAL;
+    multipush(R1,R2);
+    call MOD_5;
+    multipop(R1,R2);
+endwhile;
+
+[TERMINAL_STATUS_TABLE + 0] = 1;
+[TERMINAL_STATUS_TABLE + 1] = currentPID;
+return;
+
+else 
+    if (functionNum==9) then //RELEASE TERMINAL
+
+        if(currentPID!=[TERMINAL_STATUS_TABLE+1]) then
+            R0 = -1;
+            return;
+        endif;
+
+        [TERMINAL_STATUS_TABLE + 0] = 0;
+
+        alias counter R5;
+        counter = 1;
+        while(counter<16) do
+            if([PROCESS_TABLE+counter*16+4]==WAIT_TERMINAL) then
+                [PROCESS_TABLE + counter*16 + 4] = READY;
+            endif;
+            counter = counter + 1;
+        endwhile;
+        R0 = 0;
+    endif;
+endif;
+return;
