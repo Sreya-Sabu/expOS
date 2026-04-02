@@ -1,0 +1,237 @@
+alias functionNumber R1;
+
+// --- Buffered Read Function ---  
+// Purpose: Loads a disk page into the corresponding buffer and copies the word at the  
+//          specified offset into the given memory address.  
+// Arguments:  
+//   - Physical Memory Address (Required)  
+// Implementation:  
+//   - Identify the buffer using the scheme: `Buffer Number = (Disk Number % 4)`.  
+//   - Acquire the buffer using `Acquire_Buffer()` from the Resource Manager.  
+//   - If the buffer contains a different disk block:  
+//       - If the buffer is dirty, write its contents back to disk using `disk_store()`.  
+//       - Mark the buffer as clean in the Buffer Table.  
+//       - Load the required disk block into the buffer using `disk_load()`.  
+//       - Update the Buffer Table with the new disk block number.  
+//   - Copy the word at the specified offset in the buffer to the physical memory address.  
+//   - Release the buffer using `Release_Buffer()`.  
+if (functionNumber == 2) then
+    breakpoint;
+    alias blockNumber R2;
+    alias offset R3;
+    alias memAddress R4;
+    alias bufferIndex R5;
+    alias bufferEntry R6;
+
+    bufferIndex = blockNumber % MAX_BUFFER;
+    bufferEntry = BUFFER_TABLE + bufferIndex * 4;
+
+    // acquire the buffer
+    multipush(R0, R1, R2, R3, R4, R5, R6);
+    R1 = 1;
+    R2 = bufferIndex;
+    R3 = [SYSTEM_STATUS_TABLE+1];
+    call RESOURCE_MANAGER;
+    multipop(R0, R1, R2, R3, R4, R5, R6);
+    
+    // if the buffer contains a different block number
+    if ([bufferEntry + 0] != blockNumber) then
+        // if the buffer is dirty
+        if ([bufferEntry + 1] == 1) then
+            // call disk store to writeback the block
+            multipush(R0, R1, R2, R3, R4, R5, R6);
+            R1 = 1;
+            R2 = [SYSTEM_STATUS_TABLE+1];
+            R3 = 71 + bufferIndex;
+            R4 = [bufferEntry + 0];
+            call DEVICE_MANAGER;
+            multipop(R0, R1, R2, R3, R4, R5, R6);
+
+            // set the buffer to clean
+            [bufferEntry + 1] = 0;
+        endif;
+
+        // load the required disk block into the buffer -> call disk load
+        multipush(R0, R1, R2, R3, R4, R5, R6);
+        R1 = 2;
+        R4 = blockNumber;
+        R2 = [SYSTEM_STATUS_TABLE+1];
+        R3 = 71 + bufferIndex;
+        call DEVICE_MANAGER;
+        multipop(R0, R1, R2, R3, R4, R5, R6);
+
+        // set the new disk block number tin the BUFFER_TABLE
+        [bufferEntry + 0] = blockNumber;
+    endif;
+
+    [memAddress] = [(71 + bufferIndex)*512 + offset];
+    multipush(R0, R1, R2, R3, R4, R5, R6);
+    R1 = 2;
+    R2 = bufferIndex;
+    R3 = [SYSTEM_STATUS_TABLE+1];  
+    call RESOURCE_MANAGER;
+    multipop(R0, R1, R2, R3, R4, R5, R6);
+endif;
+
+// --- Open File ---  
+// Purpose: Locates file in Inode Table and adds an entry in Open File Table  
+// Input: File Name (String)  
+// Output:  
+//   - Returns Open File Table index on success  
+//   - Returns -1 if file does not exist or locking fails  
+//   - Returns -2 if Open File Table is full  
+// Implementation:  
+//   - Ensure calling process has space in Per Process Resource Table  
+//   - Find file’s Inode Table index; if not found, return -1  
+//   - Call acquire_inode(); if fails, return -1  
+//   - If file type is EXEC, release inode and return -1  
+//   - Find a free entry in Open File Table; if none, release inode and return -2  
+//   - If file name is "root", set INODE INDEX to INODE_ROOT  
+//   - Otherwise, update File Open Count in File Status Table  
+//   - Set OPEN INSTANCE COUNT to 1 and LSEEK to 0  
+//   - Call release_inode()  
+//   - Return Open File Table index  
+//   - Used by the open system call  
+
+if (functionNumber == 3) then
+    alias fileName R2;
+    alias counter R3;
+    counter = 0;
+    // finds index of inode entry of the file
+    while (counter < MAX_FILE_NUM && [INODE_TABLE + counter * 16 + 1]  != fileName) do
+        counter = counter + 1;
+    endwhile;
+    // if not found, return -1
+    if (counter == MAX_FILE_NUM) then
+        R0 = -1;
+    else
+        // call acquire inode 
+        alias returnValue R4;
+        multipush(R0, R1, R2, R3);
+        R1 = 4;
+        R2 = counter;
+        R3 = [SYSTEM_STATUS_TABLE+1];
+        call RESOURCE_MANAGER;
+        returnValue = R0;
+        multipop(R0, R1, R2, R3);
+
+        // if it fails to lock, return -1
+        if (returnValue == -1) then
+            R0 = -1;
+        else
+            // if file type is EXEC, release inode and return -1
+            if ([INODE_TABLE + counter * 16 + 0] == EXEC) then
+                multipush(R0, R1, R2, R3, R4);
+                R1 = 5;
+                R2 = counter;
+                R3 = [SYSTEM_STATUS_TABLE + 1];
+                call RESOURCE_MANAGER;
+                multipop(R0, R1, R2, R3, R4);
+
+                R0 = -1;
+            else
+                alias openFileEntry R5;
+                openFileEntry = 0;
+                // find free enrtry in Open File Table
+                while (openFileEntry < MAX_OPENFILE_NUM) do
+                    if ([OPEN_FILE_TABLE + openFileEntry * 4 + 0] == -1) then
+                        break;
+                    endif;
+                    openFileEntry = openFileEntry + 1;
+                endwhile;
+
+                // if not present, return -2
+                if (openFileEntry == MAX_OPENFILE_NUM) then
+                    R0 = -2;
+                else
+                    alias fileStatusTableOff R6;
+                    alias fileOpenTableOff R7;
+                    fileStatusTableOff = FILE_STATUS_TABLE + counter * 4;
+                    fileOpenTableOff = OPEN_FILE_TABLE + openFileEntry * 4;
+
+                    // if the open file is the root file, set the entry to INODE_ROOT
+                    if (fileName == "root") then
+                        [fileOpenTableOff + 0] = INODE_ROOT;
+                    else
+                        // if file open count is -1, set it to 1, otherwise increment the file open count
+                        if ([fileStatusTableOff + 1] == -1) then
+                            [fileStatusTableOff + 1] = 1;
+                        else
+                            [fileStatusTableOff + 1] = [fileStatusTableOff + 1] + 1;
+                        endif;
+                        // setting the inode index field in the open file table entey to inode table index of the file
+                        [fileOpenTableOff + 0] = counter;
+                    endif;
+                    // set the open instance count to 1
+                    // set LSEEK to 0
+                    [fileOpenTableOff + 1] = 1;
+                    [fileOpenTableOff + 2] = 0;
+                    
+                    // release the inode 
+                    multipush(R0, R1, R2, R3, R4, R5, R6, R7);
+                    R1 = 5;
+                    R2 = counter;
+                    R3 = [SYSTEM_STATUS_TABLE + 1];
+                    call RESOURCE_MANAGER;
+                    multipop(R0, R1, R2, R3, R4, R5, R6, R7);
+
+                    // return Open File Table index
+                    R0 = openFileEntry;
+                endif;
+            endif;
+        endif;
+    endif;
+endif;
+
+// --- Close File ---  
+// Purpose: Closes an open file instance  
+// Input: Open File Table Index (Integer)  
+// Output: None  
+// Implementation:  
+//   - Retrieve Inode Table index from Open File Table  
+//   - Decrement Open Instance Count  
+//   - If Open Instance Count reaches 0:  
+//     - Invalidate entry (set all fields to -1)  
+//     - If not "root", decrement File Open Count in File Status Table  
+//     - If File Open Count reaches 0, set it to -1  
+//   - Used by close, exit system calls  
+if (functionNumber == 4) then
+   
+    alias openFileEntry R2;
+    alias inodeIndex R3;
+    alias openFileTableOff R4;
+    alias fileStatusTableOff R5;
+
+    // finding index of Inode Table entry from the Open File Table
+    inodeIndex = [openFileTableOff + 0];
+    
+    openFileTableOff = OPEN_FILE_TABLE + openFileEntry * 4;
+    fileStatusTableOff = FILE_STATUS_TABLE + inodeIndex * 4;
+    
+   
+    // decrementing the open instance count
+    [openFileTableOff + 1] = [openFileTableOff + 1] - 1;
+    
+    // if open intance count becomes 0
+    if ([openFileTableOff + 1] == 0) then
+        [openFileTableOff + 1] = -1;
+        alias counter R6;
+        counter = 0;
+        // invalidate the entry by setting all fields to -1
+        while (counter < 4) do
+            [openFileTableOff + counter] = -1;
+            counter = counter+1;
+        endwhile;
+        // if the opne file is not the root, decrement file open count in the File Status Table
+        if (inodeIndex != INODE_ROOT) then
+            [fileStatusTableOff + 1] = [fileStatusTableOff + 1] - 1;
+            // if file count becomes 0, set it to -1
+            if ([fileStatusTableOff + 1] == 0) then
+                [fileStatusTableOff + 1] = -1;
+            endif;
+        endif;
+    endif;
+ 
+endif;
+
+return;

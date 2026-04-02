@@ -1,0 +1,182 @@
+alias functionNum R1;
+alias currentPID R2;
+
+
+// --- Acquire Buffer Function ---  
+// Purpose: Locks and acquires a buffer for use by the calling process.  
+// Input:  Buffer Number (Integer)  
+// Return Value: None  
+// Implementation:  
+//   - While the buffer is locked:  
+//       - Set the process state to `(WAIT_BUFFER, Buffer Number)`.  
+//       - Invoke `switch_context()` from the Scheduler Module.  
+//   - Lock the buffer by setting the calling process's PID in the Buffer Status Table.  
+//   - Return. 
+
+if (functionNum == 1) then
+ 
+    alias bufferNumber R2;
+    alias currentPID R3;
+
+    // while buffer is locked
+    while ([BUFFER_TABLE + bufferNumber*4 + 2] != -1) do
+        // set the state to wait buffer and call the scheduler
+        [PROCESS_TABLE + (currentPID*16) + 4] = WAIT_BUFFER;
+        [PROCESS_TABLE + (currentPID*16) + 5] = bufferNumber;
+
+        multipush(R1, R2, R3);
+        call SCHEDULER;
+        multipop(R1, R2, R3);
+    endwhile;
+    [BUFFER_TABLE + bufferNumber*4 + 2] = currentPID;
+  
+endif;
+
+// --- Release Buffer Function ---  
+// Purpose: Releases a previously acquired buffer.  
+// Arguments:  
+//   - Buffer Number (Integer)  
+//   - Process ID (PID)  
+// Return Value:  
+//   -  0: Success  
+//   - -1: Failed (Caller is not the process that locked the buffer)  
+// Implementation:  
+//   - If the calling process's PID does not match the Locking PID in the Buffer Status Table, return `-1`.  
+//   - Free the lock by setting the Locking PID field in the Buffer Status Table to `-1`.  
+//   - Loop through the Process Table:  
+//       - If a process is in state `(WAIT_BUFFER, Buffer Number)`, set its state to `(READY, _)`.  
+//   - Return `0`. 
+
+
+if (functionNum == 2) then
+   
+    alias bufferNumber R2;
+    alias currentPID R3;
+    alias counter R4;
+    counter = 0;
+
+    // check if the given PID matches the locked PID in the buffer status table
+    if (currentPID != [BUFFER_TABLE + bufferNumber * 4 + 2]) then
+        R0 = -1;
+    else
+        // free the lock in buffer status table
+        [BUFFER_TABLE + bufferNumber*4 + 2] = -1;
+        
+        // loop through and set the waiting processes of this buffer to ready
+        while (counter < MAX_PROC_NUM) do
+            if ([PROCESS_TABLE + counter*16 + 4] == WAIT_BUFFER && [PROCESS_TABLE + counter*16 + 5] == bufferNumber) then
+                [PROCESS_TABLE + counter*16 + 4] = READY;            
+            endif;
+            counter = counter+1;
+        endwhile;
+
+        R0 = 0;
+    endif;
+endif;
+
+if(functionNum==3) then //ACQUIRE DISK
+    while([DISK_STATUS_TABLE + 0]==1) do
+        [PROCESS_TABLE + currentPID*16 + 4] = WAIT_DISK;
+        multipush(R1,R2);
+        call MOD_5; // when scheduled again it will start from insrtuction after this and go back to the loop to check the availablility again thats why we need a loop
+        multipop(R1,R2);
+    endwhile;
+        [DISK_STATUS_TABLE + 0] = 1;
+        [DISK_STATUS_TABLE + 4] = currentPID;
+        return;
+endif;
+
+
+
+// -- Acquires Semaphore------------
+// purpose: acquires a semaphore and return its index
+// input : PID - pid requesting the semaphore
+// output: semaphore table index on success and -1 on failure
+// Implementation
+// - find a free entry in Semaphore Table ( whose PROCESS COUNT = 0)
+// - if no free entry return -1;
+// - set PROCESS COUNT to 0 and LOCKING_PID to -1
+// - return semaphore table index
+
+
+if(functionNum == 6) then // ACQUIRE SEMAPHORE
+    alias i R3;
+    i = 0;
+    while(i < MAX_SEM_COUNT && [SEMAPHORE_TABLE + i * 4 + 1] != 0 ) do
+        i = i + 1;
+    endwhile;
+
+    if(i == MAX_SEM_COUNT) then
+        R0 = -1;
+    else
+        // set locking field to -1 and increment process count field to 1 
+        [SEMAPHORE_TABLE + i*4 + 0] = -1;
+        [SEMAPHORE_TABLE + i*4 + 1] = 1;
+        R0 = i;
+    endif;
+endif;
+
+// Release Semaphore---------------
+//Purpose: to release a semaphore, unlocking blocked processes
+//input  : Semaphore Table index, PID
+//output : 0 (success) or -1(failure)
+//Implementation
+// - if the semaphore is locked by the gvn PID set lockinng pid to -1;
+// - wake up processes in (WAIT_SEMAPHORE , SEMTABLEINDEX) state
+// - decrement PROCESS COUNT if 0 semaphore is free
+// - called by semrelease and exit system calls
+
+if(functionNum == 7) then // RELEASE SEMAPHORE
+    alias semindex R2;
+    currentPID = R3;
+    alias i R4;
+    i = 0;
+    if([SEMAPHORE_TABLE + 4 * semindex + 0] == currentPID) then
+        [SEMAPHORE_TABLE + 4 * semindex + 0] = -1;
+
+    while(i < MAX_PROC_NUM) do
+        if([PROCESS_TABLE + i * 16 + 4] == WAIT_SEMAPHORE && [PROCESS_TABLE + i * 16 + 5] == semindex) then 
+            [PROCESS_TABLE + i * 16 + 4] = READY;
+        endif;
+    i = i + 1;
+    endwhile;
+
+    [SEMAPHORE_TABLE + semindex * 4 + 1] = [SEMAPHORE_TABLE + semindex * 4 + 1] -1 ;
+    endif;
+endif;
+
+
+if(functionNum==8) then //ACQUIRE TERMINAL
+while([TERMINAL_STATUS_TABLE+0]==1) do
+    [PROCESS_TABLE+ 16*currentPID+4] = WAIT_TERMINAL;
+    multipush(R1,R2);
+    call MOD_5;
+    multipop(R1,R2);
+endwhile;
+
+[TERMINAL_STATUS_TABLE + 0] = 1;
+[TERMINAL_STATUS_TABLE + 1] = currentPID;
+return;
+
+else 
+    if (functionNum==9) then //RELEASE TERMINAL
+
+        if(currentPID!=[TERMINAL_STATUS_TABLE+1]) then
+            R0 = -1;
+            return;
+        endif;
+
+        [TERMINAL_STATUS_TABLE + 0] = 0;
+
+        alias counter R5;
+        counter = 1;
+        while(counter<16) do
+            if([PROCESS_TABLE+counter*16+4]==WAIT_TERMINAL) then
+                [PROCESS_TABLE + counter*16 + 4] = READY;
+            endif;
+            counter = counter + 1;
+        endwhile;
+        R0 = 0;
+    endif;
+endif;
+return;

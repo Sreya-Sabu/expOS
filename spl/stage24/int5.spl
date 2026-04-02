@@ -1,0 +1,133 @@
+[PROCESS_TABLE + ([SYSTEM_STATUS_TABLE+1]*16) + 13] = SP;
+alias userSP R0;
+userSP = SP;
+SP = [PROCESS_TABLE + ([SYSTEM_STATUS_TABLE+1]*16) + 11]*512 - 1;
+
+// getting the system call number from the top of the stack
+alias callNumber R1;
+callNumber = [[PTBR + 2*(userSP-5)/512]*512 + (userSP-5)%512];
+
+// setting the system call number
+[PROCESS_TABLE + ([SYSTEM_STATUS_TABLE+1]*16) + 9] = callNumber;
+
+alias returnAddress R2;
+returnAddress = [PTBR + 2*(userSP-1)/512]*512 + (userSP-1)%512;
+
+// --- Open System Call ---  
+// Purpose: Opens a file for reading or writing, returning a file descriptor.  
+// Arguments:  
+//   - Filename (String)  
+// Return Value:  
+//   -  File Descriptor (Integer): Success  
+//   - -1: File not found or not a valid file  
+//   - -2: System has reached max open files  
+//   - -3: Process has reached resource limit  
+// Implementation:  
+//   - Set `MODE_FLAG` in Process Table entry to 2 (indicating Open system call).  
+//   - Switch to Kernel Stack, saving the user stack pointer (SP).  
+//   - Locate a free Per-Process Resource Table entry.  
+//   - Call `open()` function from File Manager to get an Open File Table entry.  
+//   - If `open()` fails, return the error code.  
+//   - Update the Per-Process Resource Table entry with the Open File Table index.  
+//   - Reset `MODE_FLAG` in Process Table entry to 0.  
+//   - Restore stack pointer (SP) and return the file descriptor index.  
+
+
+if(callNumber == 2) then
+    alias counter R3;
+    alias resourceTable R4;
+    counter = 0;
+    resourceTable = [PROCESS_TABLE + ([SYSTEM_STATUS_TABLE+1]*16) + 11]*512 + RESOURCE_TABLE_OFFSET;
+    
+    // look for free per process table entry
+    while (counter < 8) do
+        if ([resourceTable + counter * 2 + 0] == -1) then 
+            break;
+        endif;
+        counter = counter+1;
+    endwhile;
+
+    // if no table is free, return -3
+    if (counter == 8) then
+        [returnAddress] = -3;
+    else
+        alias fileName R5;
+        fileName = [[PTBR + 2*(userSP-4)/512]*512 + (userSP-4)%512];
+        alias fileTableEntry R6;
+
+        // call open function
+        multipush(R0, R1, R2, R3, R4, R5);
+        R1 = 3;
+        R2 = fileName;
+        call FILE_MANAGER;
+        fileTableEntry = R0;
+        multipop(R0, R1, R2, R3, R4, R5);
+
+        if (fileTableEntry < 0) then 
+            [returnAddress] = fileTableEntry;
+        else
+            // setting the per process resource table
+            [resourceTable + counter*2 + 0] = FILE;
+            [resourceTable + counter*2 + 1] = fileTableEntry;
+            [returnAddress] = counter;
+        endif;
+    endif;
+    
+endif;
+
+// --- Close System Call ---  
+// Purpose: Closes an open file and invalidates the file descriptor.  
+// Arguments:  
+//   - File Descriptor (Integer)  
+// Return Value:  
+//   -  0: Success  
+//   - -1: Invalid file descriptor  
+// Implementation:  
+//   - Set `MODE_FLAG` in Process Table entry to 3 (indicating Close system call).  
+//   - Switch to Kernel Stack, saving the user stack pointer (SP).  
+//   - Validate file descriptor (must be in range 0-7). If invalid, return -1.  
+//   - Locate the Per-Process Resource Table using PID from System Status Table.  
+//   - Verify if the resource table entry corresponds to a valid file. If not, return -1.  
+//   - Retrieve the Open File Table index from the resource table entry.  
+//   - Call `close()` function in File Manager with Open File Table index.  
+//   - Invalidate the Per-Process Resource Table entry.  
+//   - Reset `MODE_FLAG` in Process Table entry to 0.  
+//   - Restore stack pointer (SP) and switch back to user stack.  
+//   - Return 0 on success.  
+if (callNumber == 3) then 
+    breakpoint;
+    alias fileDescriptor R3;
+    fileDescriptor = [[PTBR + 2*(userSP-4)/512]*512 + (userSP-4)%512];
+    
+    // check if file descriptor is valid
+    if (fileDescriptor < 0 || fileDescriptor > 7) then 
+        [returnAddress] = -1;
+    else
+        alias resourceTableEntry R4;
+        resourceTableEntry = [PROCESS_TABLE + ([SYSTEM_STATUS_TABLE+1]*16) + 11]*512 + RESOURCE_TABLE_OFFSET + fileDescriptor*2;
+
+        if ([resourceTableEntry + 0] != FILE) then
+            [returnAddress] = -1;
+        else
+            // index of open file table entry
+            alias openFileTableEntry R5;
+            openFileTableEntry = [resourceTableEntry + 1];
+
+            // call close function
+            multipush(R0, R1, R2, R3, R4, R5); 
+            R1 = 4;
+            R2 = openFileTableEntry;
+            call FILE_MANAGER;
+            multipop(R0, R1, R2, R3, R4, R5);
+
+            // invalidate per process resource tables
+            [resourceTableEntry + 0] = -1;
+            [returnAddress] = 0;
+        endif;
+    endif;
+    breakpoint;
+endif;
+
+[PROCESS_TABLE + ([SYSTEM_STATUS_TABLE+1]*16) + 9] = 0;
+SP = userSP;
+ireturn;
