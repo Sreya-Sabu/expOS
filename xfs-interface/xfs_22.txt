@@ -1,0 +1,28 @@
+load --os $HOME/myexpos/spl/stage16/os_startup_st16.xsm 
+load --library $HOME/myexpos/expl/library.lib
+load --module 0 $HOME/myexpos/spl/stage22/resource_man.xsm
+load --module 1 $HOME/myexpos/spl/stage22/process_man.xsm
+load --module 2 $HOME/myexpos/spl/stage21/working_mem_man.xsm
+load --module 4 $HOME/myexpos/spl/stage18/device_st18.xsm
+load --module 5 $HOME/myexpos/spl/stage22/mod5.xsm
+load --module 7 $HOME/myexpos/spl/stage22/boot.xsm
+load --int=timer $HOME/myexpos/spl/stage22/timer.xsm
+load --int=console $HOME/myexpos/spl/stage16/console_interrupt.xsm
+load --int=disk $HOME/myexpos/spl/stage18/disk_interrupt_st18.xsm
+load --int=6 $HOME/myexpos/spl/stage16/int6.xsm
+load --int=7 $HOME/myexpos/spl/stage15/int7_st15.xsm
+load --int=8 $HOME/myexpos/spl/stage22/fork.xsm
+load --int=9 $HOME/myexpos/spl/stage19/exec_int9_st19.xsm
+load --int=10 $HOME/myexpos/spl/stage20/exit.xsm
+load --int=11 $HOME/myexpos/spl/stage21/int11.xsm
+load --int=13 $HOME/myexpos/spl/stage22/int13.xsm
+load --int=14 $HOME/myexpos/spl/stage22/int14.xsm
+load --int=15 $HOME/myexpos/spl/stage22/int15.xsm
+load --exhandler $HOME/myexpos/spl/stage21/exception.xsm
+load --idle $HOME/myexpos/expl/samples/idle.xsm 
+load --init $HOME/myexpos/expl/samples/init_st21_assg1.xsm
+load --exec $HOME/myexpos/expl/stage22/assg1.xsm
+load --exec $HOME/myexpos/expl/stage22/parent.xsm
+load --exec $HOME/myexpos/expl/stage22/child.xsm
+load --exec $HOME/myexpos/expl/stage22/mergeS.xsm
+load --exec $HOME/myexpos/expl/stage22/mergeC.xsm
